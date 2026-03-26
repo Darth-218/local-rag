@@ -316,23 +316,24 @@ npm install -g pnpm
 - [x] Document metadata
 
 ### Phase 3: Embedding & Storage
-- [ ] Embedding model setup (all-MiniLM-L6-v2)
-- [ ] ChromaDB integration
-- [ ] Batch embedding
-- [ ] Document management (list/delete)
+- [x] Ollama API client
+- [x] Embedding generation
+- [x] Cosine similarity search
+- [x] Document embedding storage
+- [x] RAG retrieval pipeline
 
 ### Phase 4: LLM Integration
-- [ ] Ollama API client
-- [ ] Prompt templating
-- [ ] Retrieval → Generation pipeline
+- [x] Ollama API client
+- [x] Prompt templating
+- [x] Retrieval → Generation pipeline
 - [ ] Streaming responses
 
 ### Phase 5: UI/UX
-- [ ] Document library view
-- [ ] Chat interface
+- [x] Document library view
+- [x] Chat interface layout
 - [ ] Upload flow with progress
 - [ ] Settings panel
-- [ ] Source citations
+- [ ] Source citations display
 
 ### Phase 6: Polish
 - [ ] Error handling

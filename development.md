@@ -1,6 +1,6 @@
 # Development Log
 
-## Current State: Phase 2 Complete - Document Processing Pipeline
+## Current State: Phase 3 Complete - Embedding & Vector Storage
 
 ---
 
@@ -12,6 +12,7 @@
 - Initialized Git repository
 - Created README.md with project overview, architecture, and roadmap
 - Created Nix development environment (`flake.nix`, `nix/shell.nix`)
+- Fixed GTK schema issue for file dialogs
 
 #### Frontend Setup (Vite + React)
 ```bash
@@ -21,20 +22,6 @@ npm create vite@latest src -- --template react-ts
 #### Tauri Backend Initialization
 ```bash
 npx tauri init --app-name "local-rag" --window-title "local-rag" ...
-```
-
-#### Cargo Dependencies
-```toml
-[dependencies]
-tauri = { version = "2.10.3", features = ["devtools"] }
-tauri-plugin-log = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-shell = "2"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-log = "0.4"
-thiserror = "1.0"
-anyhow = "1.0"
 ```
 
 #### Phase 1 Commands
@@ -55,44 +42,12 @@ chrono = { version = "0.4", features = ["serde"] }
 ```
 
 ### Document Module (`document.rs`)
+- PDF text extraction using lopdf
+- Text/markdown file support
+- Chunking with configurable size/overlap
+- Document metadata extraction
 
-#### Data Structures
-```rust
-pub struct DocumentMetadata {
-    pub id: String,
-    pub name: String,
-    pub file_path: String,
-    pub file_type: String,
-    pub size: u64,
-    pub page_count: Option<u32>,
-    pub word_count: u32,
-    pub created_at: DateTime<Utc>,
-    pub modified_at: DateTime<Utc>,
-}
-
-pub struct TextChunk {
-    pub id: String,
-    pub document_id: String,
-    pub content: String,
-    pub chunk_index: u32,
-    pub start_char: u32,
-    pub end_char: u32,
-}
-```
-
-#### DocumentProcessor Methods
-- `new()` - Create new processor
-- `get_file_type()` - Get file extension
-- `is_supported()` - Check if file type is supported
-- `extract_pdf_text()` - Extract text from PDF using lopdf
-- `extract_text_file()` - Read text/markdown files
-- `extract_text()` - Unified text extraction
-- `get_pdf_page_count()` - Count PDF pages
-- `count_words()` - Count words in text
-- `chunk_text()` - Split text into chunks with overlap
-- `process_document()` - Full document processing pipeline
-
-### New Tauri Commands
+### Phase 2 Commands
 ```rust
 #[tauri::command] pub async fn pick_file() -> Option<String>
 #[tauri::command] pub async fn process_document(filePath: String) -> ProcessingResult
@@ -100,21 +55,46 @@ pub struct TextChunk {
 #[tauri::command] pub async fn delete_document(documentId: String) -> ()
 ```
 
-### Frontend (`App.tsx`)
+### Frontend UI
+- Three-panel layout (chat history, chat area, documents)
+- Minimalist white theme
+- Add/delete document functionality
 
-#### Features
-- Document list display with metadata
-- Add document button (opens native file picker)
-- Delete document functionality
-- File size, page count, word count display
-- Date formatting
-- Empty state handling
-- Error message display
+---
 
-#### Styling
-- Dark theme (matches project aesthetic)
-- Responsive grid layout
-- Card-based document display
+## Phase 3: Embedding & Vector Storage ✅
+
+### New Cargo Dependencies
+```toml
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+futures = "0.3"
+```
+
+### Ollama Module (`ollama.rs`)
+- HTTP client for Ollama API
+- Model listing
+- Embedding generation via `/api/embeddings`
+- Response generation via `/api/generate`
+
+### Embedding Module (`embedding.rs`)
+- ChromaEntry data structure
+- Cosine similarity calculation
+- Similar document retrieval
+
+### New Tauri Commands
+```rust
+#[tauri::command] pub async fn check_ollama_status() -> OllamaStatus
+#[tauri::command] pub async fn embed_document(documentId: String, model: Option<String>) -> EmbeddingResult
+#[tauri::command] pub async fn search_documents(query: String, topK: Option<usize>) -> SearchResult
+#[tauri::command] pub async fn ask_question(query: String, model: Option<String>) -> String
+```
+
+### Data Flow
+```
+Document → Extract Text → Chunk → Embed (Ollama) → Store (chroma/index.json)
+Query → Embed → Search (cosine similarity) → Retrieve chunks → Generate response
+```
 
 ---
 
@@ -142,6 +122,8 @@ local-rag/
 │   │   ├── lib.rs       # App setup with plugins
 │   │   ├── commands.rs  # Tauri commands
 │   │   ├── document.rs  # Document processing
+│   │   ├── embedding.rs # Vector storage
+│   │   ├── ollama.rs    # Ollama API client
 │   │   └── config.rs    # Config module (stub)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
@@ -154,12 +136,12 @@ local-rag/
 
 ---
 
-## Next: Phase 3 - Embedding & Vector Storage
+## Next: Phase 4 - LLM Integration & Chat UI
 
-- Embedding model setup (all-MiniLM-L6-v2)
-- ChromaDB integration
-- Batch embedding
-- Store chunks in vector database
+- Full chat interface with message history
+- Real-time streaming responses
+- Source citations display
+- Chat persistence
 
 ## Commands Reference
 
@@ -179,6 +161,17 @@ npm run tauri:dev
 
 # Build Tauri
 npm run tauri:build
+```
+
+## Prerequisites for Full Functionality
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull models
+ollama pull phi3.5-mini    # For chat
+ollama pull nomic-embed-text  # For embeddings
 ```
 
 ## Environment Info

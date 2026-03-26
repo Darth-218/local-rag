@@ -4,8 +4,10 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 mod commands;
-mod document;
 mod config;
+mod document;
+mod embedding;
+mod ollama;
 
 pub fn get_app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -60,6 +62,10 @@ pub fn run() {
             commands::process_document,
             commands::get_documents_metadata,
             commands::delete_document,
+            commands::check_ollama_status,
+            commands::embed_document,
+            commands::search_documents,
+            commands::ask_question,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
