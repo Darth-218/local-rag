@@ -309,11 +309,11 @@ npm install -g pnpm
 - [x] Add logging + error handling
 
 ### Phase 2: Document Processing
-- [ ] File picker UI
-- [ ] PDF text extraction
-- [ ] Chunking logic (fixed-size + overlap)
-- [ ] Markdown/text support
-- [ ] Document metadata
+- [x] File picker UI
+- [x] PDF text extraction
+- [x] Chunking logic (fixed-size + overlap)
+- [x] Markdown/text support
+- [x] Document metadata
 
 ### Phase 3: Embedding & Storage
 - [ ] Embedding model setup (all-MiniLM-L6-v2)

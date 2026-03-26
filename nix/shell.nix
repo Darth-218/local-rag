@@ -17,7 +17,7 @@ pkgs.mkShell {
 
     # Tauri system dependencies (Linux)
     pkgs.pkg-config
-    pkgs.glib.dev
+    pkgs.glib
     pkgs.gtk3
     pkgs.webkitgtk_4_1
     pkgs.libsoup_3
@@ -43,7 +43,15 @@ pkgs.mkShell {
 
   LIBCLANG_PATH = "${pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.out ]}";
 
+  GSETTINGS_SCHEMA_DIR = "${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}/glib-2.0/schemas";
+
   shellHook = ''
+    # Compile GTK schemas for Tauri file dialogs
+    export GSETTINGS_SCHEMA_DIR="${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}/glib-2.0/schemas"
+    mkdir -p "$HOME/.local/share/glib-2.0/schemas"
+    cp -r "$GSETTINGS_SCHEMA_DIR/"* "$HOME/.local/share/glib-2.0/schemas/" 2>/dev/null || true
+    glib-compile-schemas "$HOME/.local/share/glib-2.0/schemas" 2>/dev/null || true
+
     echo "═══════════════════════════════════════════════════════"
     echo "  local-rag development environment"
     echo "═══════════════════════════════════════════════════════"
