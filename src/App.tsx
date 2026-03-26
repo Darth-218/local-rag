@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import './App.css'
 
@@ -22,17 +22,29 @@ interface ProcessingResult {
 interface Chat {
   id: string
   title: string
-  createdAt: string
+  created_at: string
+  updated_at: string
+}
+
+interface Message {
+  id: string
+  chat_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
 }
 
 function App() {
   const [documents, setDocuments] = useState<DocumentMetadata[]>([])
-  const [chats] = useState<Chat[]>([
-    { id: '1', title: 'New Chat', createdAt: new Date().toISOString() }
-  ])
-  const [activeChat, setActiveChat] = useState<string>('1')
+  const [chats, setChats] = useState<Chat[]>([])
+  const [activeChat, setActiveChat] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [inputValue, setInputValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editingChatId, setEditingChatId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const loadDocuments = async () => {
     try {
@@ -43,9 +55,86 @@ function App() {
     }
   }
 
+  const loadChats = async () => {
+    try {
+      const loadedChats = await invoke<Chat[]>('get_chats')
+      setChats(loadedChats)
+      if (loadedChats.length > 0 && !activeChat) {
+        setActiveChat(loadedChats[0].id)
+      }
+    } catch (err) {
+      console.error('Failed to load chats:', err)
+    }
+  }
+
+  const loadMessages = async (chatId: string) => {
+    try {
+      const loadedMessages = await invoke<Message[]>('get_chat_messages', { chatId })
+      setMessages(loadedMessages)
+    } catch (err) {
+      console.error('Failed to load messages:', err)
+    }
+  }
+
   useEffect(() => {
     loadDocuments()
+    loadChats()
   }, [])
+
+  useEffect(() => {
+    if (activeChat) {
+      loadMessages(activeChat)
+    } else {
+      setMessages([])
+    }
+  }, [activeChat])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const handleCreateChat = async () => {
+    try {
+      const newChat = await invoke<Chat>('create_chat', { title: null })
+      setChats(prev => [newChat, ...prev])
+      setActiveChat(newChat.id)
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const handleDeleteChat = async (chatId: string) => {
+    try {
+      await invoke('delete_chat', { chatId })
+      setChats(prev => prev.filter(c => c.id !== chatId))
+      if (activeChat === chatId) {
+        const remaining = chats.filter(c => c.id !== chatId)
+        setActiveChat(remaining.length > 0 ? remaining[0].id : null)
+      }
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const handleStartRename = (chat: Chat) => {
+    setEditingChatId(chat.id)
+    setEditingTitle(chat.title)
+  }
+
+  const handleRenameChat = async () => {
+    if (!editingChatId || !editingTitle.trim()) return
+    try {
+      const updated = await invoke<Chat>('rename_chat', { 
+        chatId: editingChatId, 
+        title: editingTitle.trim() 
+      })
+      setChats(prev => prev.map(c => c.id === updated.id ? updated : c))
+      setEditingChatId(null)
+      setEditingTitle('')
+    } catch (err) {
+      setError(String(err))
+    }
+  }
 
   const handlePickFile = async () => {
     setLoading(true)
@@ -53,7 +142,6 @@ function App() {
     
     try {
       const filePath = await invoke<string | null>('pick_file')
-      
       if (filePath) {
         await invoke<ProcessingResult>('process_document', { filePath })
         await loadDocuments()
@@ -74,6 +162,45 @@ function App() {
     }
   }
 
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || !activeChat || loading) return
+    
+    const userMessage = inputValue.trim()
+    setInputValue('')
+    setLoading(true)
+    
+    try {
+      await invoke<Message>('send_message', { 
+        chatId: activeChat, 
+        content: userMessage 
+      })
+      
+      const response = await invoke<string>('ask_question', { 
+        query: userMessage,
+        model: null
+      })
+      
+      await invoke<Message>('send_message', {
+        chatId: activeChat,
+        content: response
+      })
+      
+      await loadMessages(activeChat)
+      await loadChats()
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
+  }
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -85,33 +212,100 @@ function App() {
       {/* Left Sidebar - Chat History */}
       <aside className="sidebar sidebar-left">
         <div className="sidebar-header">
-          <button className="new-chat-btn">
+          <button className="new-chat-btn" onClick={handleCreateChat}>
             <span className="icon">+</span>
             New Chat
           </button>
         </div>
         <nav className="chat-list">
-          {chats.map((chat) => (
-            <button
-              key={chat.id}
-              className={`chat-item ${activeChat === chat.id ? 'active' : ''}`}
-              onClick={() => setActiveChat(chat.id)}
-            >
-              {chat.title}
-            </button>
-          ))}
+          {chats.length === 0 ? (
+            <div className="empty-chats">
+              <p>No chats yet</p>
+              <p className="hint">Click "New Chat" to start</p>
+            </div>
+          ) : (
+            chats.map((chat) => (
+              <div 
+                key={chat.id} 
+                className={`chat-item ${activeChat === chat.id ? 'active' : ''}`}
+              >
+                {editingChatId === chat.id ? (
+                  <input
+                    className="chat-title-input"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onBlur={handleRenameChat}
+                    onKeyDown={(e) => e.key === 'Enter' && handleRenameChat()}
+                    autoFocus
+                  />
+                ) : (
+                  <button 
+                    className="chat-title-btn"
+                    onClick={() => setActiveChat(chat.id)}
+                    onDoubleClick={() => handleStartRename(chat)}
+                  >
+                    {chat.title}
+                  </button>
+                )}
+                <button 
+                  className="chat-delete"
+                  onClick={() => handleDeleteChat(chat.id)}
+                  title="Delete chat"
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
         </nav>
       </aside>
 
       {/* Main Content Area */}
       <main className="main-content">
         <div className="chat-area">
-          <div className="chat-messages">
+          {activeChat ? (
+            <>
+              <div className="chat-messages">
+                {messages.length === 0 ? (
+                  <div className="welcome-message">
+                    <h2>local-rag</h2>
+                    <p>Ask questions about your documents</p>
+                  </div>
+                ) : (
+                  messages.map((msg) => (
+                    <div key={msg.id} className={`message ${msg.role}`}>
+                      <div className="message-role">{msg.role === 'user' ? 'You' : 'Assistant'}</div>
+                      <div className="message-content">{msg.content}</div>
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+              <div className="chat-input-area">
+                <textarea
+                  className="chat-input"
+                  placeholder="Type your question..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={loading}
+                  rows={1}
+                />
+                <button 
+                  className="send-btn"
+                  onClick={handleSendMessage}
+                  disabled={!inputValue.trim() || loading}
+                >
+                  {loading ? '...' : '→'}
+                </button>
+              </div>
+            </>
+          ) : (
             <div className="welcome-message">
               <h2>local-rag</h2>
-              <p>Select a document from the right panel and ask questions about it.</p>
+              <p>Select a chat or create a new one to get started</p>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Bottom Command Bar */}

@@ -98,6 +98,40 @@ Query → Embed → Search (cosine similarity) → Retrieve chunks → Generate 
 
 ---
 
+## Chat Functionality
+
+### New Module (`chat.rs`)
+- Chat data structures (Chat, Message, MessageRole)
+- Chat CRUD operations
+- Message storage
+
+### New Tauri Commands
+```rust
+#[tauri::command] pub async fn get_chats() -> Vec<Chat>
+#[tauri::command] pub async fn create_chat(title: Option<String>) -> Chat
+#[tauri::command] pub async fn delete_chat(chatId: String) -> ()
+#[tauri::command] pub async fn rename_chat(chatId: String, title: String) -> Chat
+#[tauri::command] pub async fn get_chat_messages(chatId: String) -> Vec<Message>
+#[tauri::command] pub async fn send_message(chatId: String, content: String) -> Message
+```
+
+### Frontend Features
+- Create new chats
+- Switch between chats
+- Rename chats (double-click)
+- Delete chats
+- Send messages and receive AI responses
+- Message display with user/assistant styling
+
+### Data Storage
+```
+~/.local/share/com.localrag.app/
+└── chats/
+    └── data.json     # All chats and messages
+```
+
+---
+
 ## Build Status
 
 | Check | Status |
@@ -124,6 +158,7 @@ local-rag/
 │   │   ├── document.rs  # Document processing
 │   │   ├── embedding.rs # Vector storage
 │   │   ├── ollama.rs    # Ollama API client
+│   │   ├── chat.rs      # Chat management
 │   │   └── config.rs    # Config module (stub)
 │   ├── Cargo.toml
 │   └── tauri.conf.json

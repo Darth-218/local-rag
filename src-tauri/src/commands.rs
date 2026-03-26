@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::chat::{self, Chat, Message, MessageRole};
 use crate::document::{DocumentMetadata, DocumentProcessor, TextChunk};
 use crate::embedding::{self, ChromaEntry};
 use crate::ollama::OllamaClient;
@@ -350,4 +351,76 @@ pub async fn ask_question(
         .map_err(|e| format!("Failed to generate response: {}", e))?;
 
     Ok(response)
+}
+
+#[tauri::command]
+pub async fn get_chats(app: AppHandle) -> Result<Vec<Chat>, String> {
+    let app_data_dir = get_app_data_dir(&app)?;
+    let chats_dir = app_data_dir.join("chats");
+    let data = chat::load_chat_data(&chats_dir)?;
+    Ok(data.chats)
+}
+
+#[tauri::command]
+pub async fn create_chat(app: AppHandle, title: Option<String>) -> Result<Chat, String> {
+    let app_data_dir = get_app_data_dir(&app)?;
+    let chats_dir = app_data_dir.join("chats");
+    let mut data = chat::load_chat_data(&chats_dir)?;
+    let chat = chat::create_new_chat(&mut data, title);
+    chat::save_chat_data(&chats_dir, &data)?;
+    Ok(chat)
+}
+
+#[tauri::command]
+pub async fn delete_chat(app: AppHandle, chat_id: String) -> Result<(), String> {
+    let app_data_dir = get_app_data_dir(&app)?;
+    let chats_dir = app_data_dir.join("chats");
+    let mut data = chat::load_chat_data(&chats_dir)?;
+    if !chat::delete_chat_by_id(&mut data, &chat_id) {
+        return Err("Chat not found".to_string());
+    }
+    chat::save_chat_data(&chats_dir, &data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rename_chat(
+    app: AppHandle,
+    chat_id: String,
+    title: String,
+) -> Result<Chat, String> {
+    let app_data_dir = get_app_data_dir(&app)?;
+    let chats_dir = app_data_dir.join("chats");
+    let mut data = chat::load_chat_data(&chats_dir)?;
+    let chat = chat::rename_chat(&mut data, &chat_id, &title)
+        .ok_or("Chat not found")?;
+    chat::save_chat_data(&chats_dir, &data)?;
+    Ok(chat)
+}
+
+#[tauri::command]
+pub async fn get_chat_messages(app: AppHandle, chat_id: String) -> Result<Vec<Message>, String> {
+    let app_data_dir = get_app_data_dir(&app)?;
+    let chats_dir = app_data_dir.join("chats");
+    let data = chat::load_chat_data(&chats_dir)?;
+    Ok(chat::get_chat_messages(&data, &chat_id))
+}
+
+#[tauri::command]
+pub async fn send_message(
+    app: AppHandle,
+    chat_id: String,
+    content: String,
+) -> Result<Message, String> {
+    let app_data_dir = get_app_data_dir(&app)?;
+    let chats_dir = app_data_dir.join("chats");
+    let mut data = chat::load_chat_data(&chats_dir)?;
+    
+    if !data.chats.iter().any(|c| c.id == chat_id) {
+        return Err("Chat not found".to_string());
+    }
+    
+    let message = chat::add_message(&mut data, &chat_id, MessageRole::User, &content);
+    chat::save_chat_data(&chats_dir, &data)?;
+    Ok(message)
 }

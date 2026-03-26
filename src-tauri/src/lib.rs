@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
 
+mod chat;
 mod commands;
 mod config;
 mod document;
@@ -66,6 +67,12 @@ pub fn run() {
             commands::embed_document,
             commands::search_documents,
             commands::ask_question,
+            commands::get_chats,
+            commands::create_chat,
+            commands::delete_chat,
+            commands::rename_chat,
+            commands::get_chat_messages,
+            commands::send_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
