@@ -23,6 +23,7 @@ pub enum DocumentError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMetadata {
     pub id: String,
+    pub chat_id: String,
     pub name: String,
     pub file_path: String,
     pub file_type: String,
@@ -37,6 +38,7 @@ pub struct DocumentMetadata {
 pub struct TextChunk {
     pub id: String,
     pub document_id: String,
+    pub chat_id: String,
     pub content: String,
     pub chunk_index: u32,
     pub start_char: u32,
@@ -56,12 +58,6 @@ impl DocumentProcessor {
             chunk_overlap: 50,
             documents_dir,
         }
-    }
-
-    pub fn with_chunk_config(mut self, size: usize, overlap: usize) -> Self {
-        self.chunk_size = size;
-        self.chunk_overlap = overlap;
-        self
     }
 
     pub fn get_file_type(path: &Path) -> Option<String> {
@@ -159,7 +155,7 @@ impl DocumentProcessor {
         chunks
     }
 
-    pub fn process_document(&self, source_path: &Path) -> Result<(DocumentMetadata, Vec<TextChunk>)> {
+    pub fn process_document(&self, source_path: &Path, chat_id: &str) -> Result<(DocumentMetadata, Vec<TextChunk>)> {
         if !source_path.exists() {
             return Err(DocumentError::ReadError(
                 format!("File not found: {:?}", source_path)
@@ -186,7 +182,10 @@ impl DocumentProcessor {
             .unwrap_or("unknown")
             .to_string();
 
-        let dest_path = self.documents_dir.join(format!("{}_{}", id, file_name));
+        let chat_dir = self.documents_dir.join(chat_id);
+        fs::create_dir_all(&chat_dir)?;
+
+        let dest_path = chat_dir.join(format!("{}_{}", id, file_name));
         fs::copy(source_path, &dest_path)
             .context("Failed to copy document to storage")?;
 
@@ -202,6 +201,7 @@ impl DocumentProcessor {
         let now = Utc::now();
         let doc_metadata = DocumentMetadata {
             id: id.clone(),
+            chat_id: chat_id.to_string(),
             name: file_name,
             file_path: dest_path.to_string_lossy().to_string(),
             file_type,
@@ -220,6 +220,7 @@ impl DocumentProcessor {
                 TextChunk {
                     id: Uuid::new_v4().to_string(),
                     document_id: id.clone(),
+                    chat_id: chat_id.to_string(),
                     content,
                     chunk_index: idx,
                     start_char: start,
@@ -228,7 +229,7 @@ impl DocumentProcessor {
             })
             .collect();
 
-        info!("Processed document '{}': {} chunks", doc_metadata.name, chunks.len());
+        info!("Processed document '{}' for chat '{}': {} chunks", doc_metadata.name, chat_id, chunks.len());
 
         Ok((doc_metadata, chunks))
     }

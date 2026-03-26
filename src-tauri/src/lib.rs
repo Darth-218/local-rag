@@ -61,7 +61,7 @@ pub fn run() {
             commands::get_app_data_dir_cmd,
             commands::pick_file,
             commands::process_document,
-            commands::get_documents_metadata,
+            commands::get_chat_documents,
             commands::delete_document,
             commands::check_ollama_status,
             commands::embed_document,

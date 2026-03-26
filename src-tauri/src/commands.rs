@@ -84,7 +84,11 @@ pub async fn pick_file(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn process_document(app: AppHandle, file_path: String) -> Result<ProcessingResult, String> {
+pub async fn process_document(
+    app: AppHandle,
+    file_path: String,
+    chat_id: String,
+) -> Result<ProcessingResult, String> {
     let app_data_dir = get_app_data_dir(&app)?;
     let documents_dir = app_data_dir.join("documents");
     
@@ -95,7 +99,7 @@ pub async fn process_document(app: AppHandle, file_path: String) -> Result<Proce
     let path = PathBuf::from(&file_path);
 
     let (metadata, chunks) = processor
-        .process_document(&path)
+        .process_document(&path, &chat_id)
         .map_err(|e| format!("Failed to process document: {}", e))?;
 
     let metadata_path = app_data_dir.join("document_metadata.json");
@@ -119,7 +123,7 @@ pub async fn process_document(app: AppHandle, file_path: String) -> Result<Proce
 }
 
 #[tauri::command]
-pub async fn get_documents_metadata(app: AppHandle) -> Result<Vec<DocumentMetadata>, String> {
+pub async fn get_chat_documents(app: AppHandle, chat_id: String) -> Result<Vec<DocumentMetadata>, String> {
     let app_data_dir = get_app_data_dir(&app)?;
     let metadata_path = app_data_dir.join("document_metadata.json");
     
@@ -130,8 +134,10 @@ pub async fn get_documents_metadata(app: AppHandle) -> Result<Vec<DocumentMetada
     let content = fs::read_to_string(&metadata_path)
         .map_err(|e| format!("Failed to read metadata: {}", e))?;
     
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse metadata: {}", e))
+    let all_docs: Vec<DocumentMetadata> = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+    
+    Ok(all_docs.into_iter().filter(|d| d.chat_id == chat_id).collect())
 }
 
 #[tauri::command]
@@ -149,29 +155,29 @@ pub async fn delete_document(app: AppHandle, document_id: String) -> Result<(), 
     let mut metadata_list: Vec<DocumentMetadata> = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse metadata: {}", e))?;
 
-    let original_len = metadata_list.len();
-    metadata_list.retain(|doc| doc.id != document_id);
+    let doc_to_delete = metadata_list.iter().find(|d| d.id == document_id).cloned();
+    let chat_id = doc_to_delete.as_ref().map(|d| d.chat_id.clone());
 
-    if metadata_list.len() == original_len {
-        return Err("Document not found".to_string());
-    }
+    metadata_list.retain(|doc| doc.id != document_id);
 
     let json = serde_json::to_string_pretty(&metadata_list)
         .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
     fs::write(&metadata_path, json)
         .map_err(|e| format!("Failed to write metadata: {}", e))?;
 
-    let chroma_path = app_data_dir.join("chroma").join("index.json");
-    if chroma_path.exists() {
-        let content = fs::read_to_string(&chroma_path)
-            .map_err(|e| format!("Failed to read chroma index: {}", e))?;
-        let mut entries: Vec<ChromaEntry> = serde_json::from_str(&content)
-            .unwrap_or_default();
-        entries.retain(|e| e.metadata["document_id"].as_str().unwrap_or("") != document_id);
-        let json = serde_json::to_string_pretty(&entries)
-            .map_err(|e| format!("Failed to serialize chroma: {}", e))?;
-        fs::write(&chroma_path, json)
-            .map_err(|e| format!("Failed to write chroma: {}", e))?;
+    if let Some(cid) = chat_id {
+        let chroma_path = app_data_dir.join("chroma").join(format!("{}.json", cid));
+        if chroma_path.exists() {
+            let content = fs::read_to_string(&chroma_path)
+                .map_err(|e| format!("Failed to read chroma index: {}", e))?;
+            let mut entries: Vec<ChromaEntry> = serde_json::from_str(&content)
+                .unwrap_or_default();
+            entries.retain(|e| e.metadata["document_id"].as_str().unwrap_or("") != document_id);
+            let json = serde_json::to_string_pretty(&entries)
+                .map_err(|e| format!("Failed to serialize chroma: {}", e))?;
+            fs::write(&chroma_path, json)
+                .map_err(|e| format!("Failed to write chroma: {}", e))?;
+        }
     }
 
     Ok(())
@@ -205,6 +211,7 @@ pub async fn check_ollama_status() -> Result<OllamaStatus, String> {
 pub async fn embed_document(
     app: AppHandle,
     document_id: String,
+    chat_id: String,
     model: Option<String>,
 ) -> Result<EmbeddingResult, String> {
     let app_data_dir = get_app_data_dir(&app)?;
@@ -229,8 +236,9 @@ pub async fn embed_document(
     fs::create_dir_all(&chroma_dir)
         .map_err(|e| format!("Failed to create chroma dir: {}", e))?;
 
-    let mut entries: Vec<ChromaEntry> = if chroma_dir.join("index.json").exists() {
-        let content = fs::read_to_string(chroma_dir.join("index.json"))
+    let chroma_path = chroma_dir.join(format!("{}.json", chat_id));
+    let mut entries: Vec<ChromaEntry> = if chroma_path.exists() {
+        let content = fs::read_to_string(&chroma_path)
             .map_err(|e| format!("Failed to read index: {}", e))?;
         serde_json::from_str(&content).unwrap_or_default()
     } else {
@@ -250,6 +258,7 @@ pub async fn embed_document(
             document: content,
             metadata: serde_json::json!({
                 "document_id": document_id,
+                "chat_id": chat_id,
                 "chunk_index": idx,
                 "document_name": doc_meta.name,
             }),
@@ -258,7 +267,7 @@ pub async fn embed_document(
 
     let json = serde_json::to_string_pretty(&entries)
         .map_err(|e| format!("Failed to serialize entries: {}", e))?;
-    fs::write(chroma_dir.join("index.json"), json)
+    fs::write(&chroma_path, json)
         .map_err(|e| format!("Failed to write index: {}", e))?;
 
     Ok(EmbeddingResult {
@@ -270,6 +279,7 @@ pub async fn embed_document(
 #[tauri::command]
 pub async fn search_documents(
     app: AppHandle,
+    chat_id: String,
     query: String,
     top_k: Option<usize>,
 ) -> Result<SearchResult, String> {
@@ -278,7 +288,7 @@ pub async fn search_documents(
     let embedding_model = "nomic-embed-text".to_string();
     let k = top_k.unwrap_or(5);
 
-    let chroma_path = app_data_dir.join("chroma").join("index.json");
+    let chroma_path = app_data_dir.join("chroma").join(format!("{}.json", chat_id));
     if !chroma_path.exists() {
         return Ok(SearchResult {
             chunks: vec![],
@@ -318,6 +328,7 @@ pub async fn search_documents(
 #[tauri::command]
 pub async fn ask_question(
     app: AppHandle,
+    chat_id: String,
     query: String,
     model: Option<String>,
 ) -> Result<String, String> {
@@ -325,10 +336,10 @@ pub async fn ask_question(
     let client = OllamaClient::new();
     let llm_model = model.unwrap_or_else(|| "phi3.5-mini".to_string());
 
-    let search_result = search_documents(app.clone(), query.clone(), Some(5)).await?;
+    let search_result = search_documents(app.clone(), chat_id.clone(), query.clone(), Some(5)).await?;
 
     if search_result.chunks.is_empty() {
-        return Ok("No relevant documents found. Please add and index some documents first.".to_string());
+        return Ok("No relevant documents found. Please add documents to this chat first.".to_string());
     }
 
     let context = search_result.chunks

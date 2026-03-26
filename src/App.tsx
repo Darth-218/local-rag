@@ -4,6 +4,7 @@ import './App.css'
 
 interface DocumentMetadata {
   id: string
+  chat_id: string
   name: string
   file_path: string
   file_type: string
@@ -34,6 +35,12 @@ interface Message {
   created_at: string
 }
 
+interface ContextMenu {
+  x: number
+  y: number
+  chatId: string
+}
+
 function App() {
   const [documents, setDocuments] = useState<DocumentMetadata[]>([])
   const [chats, setChats] = useState<Chat[]>([])
@@ -42,13 +49,14 @@ function App() {
   const [inputValue, setInputValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const loadDocuments = async () => {
+  const loadDocuments = async (chatId: string) => {
     try {
-      const docs = await invoke<DocumentMetadata[]>('get_documents_metadata')
+      const docs = await invoke<DocumentMetadata[]>('get_chat_documents', { chatId })
       setDocuments(docs)
     } catch (err) {
       console.error('Failed to load documents:', err)
@@ -77,14 +85,15 @@ function App() {
   }
 
   useEffect(() => {
-    loadDocuments()
     loadChats()
   }, [])
 
   useEffect(() => {
     if (activeChat) {
+      loadDocuments(activeChat)
       loadMessages(activeChat)
     } else {
+      setDocuments([])
       setMessages([])
     }
   }, [activeChat])
@@ -92,6 +101,12 @@ function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null)
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [])
 
   const handleCreateChat = async () => {
     try {
@@ -119,6 +134,7 @@ function App() {
   const handleStartRename = (chat: Chat) => {
     setEditingChatId(chat.id)
     setEditingTitle(chat.title)
+    setContextMenu(null)
   }
 
   const handleRenameChat = async () => {
@@ -136,15 +152,29 @@ function App() {
     }
   }
 
+  const handleContextMenu = (e: React.MouseEvent, chatId: string) => {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, chatId })
+  }
+
   const handlePickFile = async () => {
+    if (!activeChat) {
+      setError('Please create or select a chat first')
+      return
+    }
+    
     setLoading(true)
     setError(null)
     
     try {
       const filePath = await invoke<string | null>('pick_file')
       if (filePath) {
-        await invoke<ProcessingResult>('process_document', { filePath })
-        await loadDocuments()
+        const result = await invoke<ProcessingResult>('process_document', { 
+          filePath, 
+          chatId: activeChat 
+        })
+        console.log('Document processed:', result.metadata.name)
+        await loadDocuments(activeChat)
       }
     } catch (err) {
       setError(String(err))
@@ -156,7 +186,9 @@ function App() {
   const handleDeleteDocument = async (id: string) => {
     try {
       await invoke('delete_document', { documentId: id })
-      await loadDocuments()
+      if (activeChat) {
+        await loadDocuments(activeChat)
+      }
     } catch (err) {
       setError(String(err))
     }
@@ -176,6 +208,7 @@ function App() {
       })
       
       const response = await invoke<string>('ask_question', { 
+        chatId: activeChat,
         query: userMessage,
         model: null
       })
@@ -228,6 +261,7 @@ function App() {
               <div 
                 key={chat.id} 
                 className={`chat-item ${activeChat === chat.id ? 'active' : ''}`}
+                onContextMenu={(e) => handleContextMenu(e, chat.id)}
               >
                 {editingChatId === chat.id ? (
                   <input
@@ -242,23 +276,39 @@ function App() {
                   <button 
                     className="chat-title-btn"
                     onClick={() => setActiveChat(chat.id)}
-                    onDoubleClick={() => handleStartRename(chat)}
                   >
                     {chat.title}
                   </button>
                 )}
-                <button 
-                  className="chat-delete"
-                  onClick={() => handleDeleteChat(chat.id)}
-                  title="Delete chat"
-                >
-                  ×
-                </button>
               </div>
             ))
           )}
         </nav>
       </aside>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div 
+          className="context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+        >
+          <button 
+            className="context-menu-item"
+            onClick={() => {
+              const chat = chats.find(c => c.id === contextMenu.chatId)
+              if (chat) handleStartRename(chat)
+            }}
+          >
+            Rename
+          </button>
+          <button 
+            className="context-menu-item danger"
+            onClick={() => handleDeleteChat(contextMenu.chatId)}
+          >
+            Delete
+          </button>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="main-content">
@@ -292,6 +342,14 @@ function App() {
                   rows={1}
                 />
                 <button 
+                  className="add-doc-btn"
+                  onClick={handlePickFile}
+                  disabled={loading || !activeChat}
+                  title="Add Document"
+                >
+                  📎
+                </button>
+                <button 
                   className="send-btn"
                   onClick={handleSendMessage}
                   disabled={!inputValue.trim() || loading}
@@ -307,24 +365,6 @@ function App() {
             </div>
           )}
         </div>
-
-        {/* Bottom Command Bar */}
-        <div className="command-bar">
-          <button 
-            className="command-btn"
-            onClick={handlePickFile}
-            disabled={loading}
-          >
-            {loading ? (
-              <span className="loading">Processing...</span>
-            ) : (
-              <>
-                <span className="icon">+</span>
-                Add Document
-              </>
-            )}
-          </button>
-        </div>
       </main>
 
       {/* Right Sidebar - Documents */}
@@ -337,7 +377,7 @@ function App() {
           {documents.length === 0 ? (
             <div className="empty-docs">
               <p>No documents</p>
-              <p className="hint">Add a document to get started</p>
+              <p className="hint">Add documents to this chat</p>
             </div>
           ) : (
             documents.map((doc) => (

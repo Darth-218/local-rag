@@ -1,6 +1,6 @@
 # Development Log
 
-## Current State: Phase 3 Complete - Embedding & Vector Storage
+## Current State: Phase 4 Enhanced - Chat-Scoped Documents & UI Improvements
 
 ---
 
@@ -129,6 +129,36 @@ Query → Embed → Search (cosine similarity) → Retrieve chunks → Generate 
 └── chats/
     └── data.json     # All chats and messages
 ```
+
+---
+
+## Phase 4 Enhancement: Chat-Scoped Documents & UI Improvements
+
+### Changes Made
+
+#### 1. Documents Per Chat
+- `DocumentMetadata` now includes `chat_id` field
+- `TextChunk` now includes `chat_id` field  
+- Documents stored in `documents/{chat_id}/` directories
+- Chroma index per chat: `chroma/{chat_id}.json`
+
+#### 2. Updated Tauri Commands
+```rust
+#[tauri::command] pub async fn process_document(filePath: String, chatId: String) -> ProcessingResult
+#[tauri::command] pub async fn get_chat_documents(chatId: String) -> Vec<DocumentMetadata>
+#[tauri::command] pub async fn embed_document(documentId: String, chatId: String, model: Option<String>) -> EmbeddingResult
+#[tauri::command] pub async fn search_documents(chatId: String, query: String, topK: Option<usize>) -> SearchResult
+#[tauri::command] pub async fn ask_question(chatId: String, query: String, model: Option<String>) -> String
+```
+
+#### 3. Right-Click Context Menu
+- Context menu on chat items with Rename and Delete options
+- Properly positioned using fixed positioning
+
+#### 4. Add Document Button
+- Moved from sidebar footer to chat input area
+- Positioned next to send button
+- Uses paperclip emoji (📎) icon
 
 ---
 
