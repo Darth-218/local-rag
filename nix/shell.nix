@@ -39,6 +39,10 @@ pkgs.mkShell {
     # Utilities
     pkgs.curl
     pkgs.wget
+
+    # OCR support
+    pkgs.tesseract  # Includes English language data
+    pkgs.poppler-utils  # For pdftoppm (PDF to image conversion)
   ];
 
   LIBCLANG_PATH = "${pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.out ]}";

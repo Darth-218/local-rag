@@ -10,6 +10,7 @@
 - **Privacy-First** - All data stays on your machine
 - **Local LLM** - Uses Ollama for inference
 - **Multi-Format Support** - PDF, Markdown, plain text
+- **OCR Support** - Automatic text extraction from scanned/image PDFs via Tesseract
 - **Source Citations** - See exactly where answers come from
 - **Open Source** - Fully transparent, auditable code
 
@@ -91,15 +92,17 @@ cargo tauri build && ./src-tauri/target/release/local-rag  # Production
 ```
 User uploads PDF
        ↓
-Text Extraction (pdf-parse)
+Text Extraction (lopdf)
+       ↓ (if empty)
+OCR via Tesseract
        ↓
-Chunking (semantic/recursive)
+Chunking (fixed-size with overlap)
        ↓
-Embedding (all-MiniLM-L6-v2)
+Embedding (nomic-embed-text via Ollama)
        ↓
-Store in ChromaDB
+Store in local JSON (vector index)
        ↓
-User query → Embed query → Retrieve chunks → Generate with LLM
+User query → Embed → Search → Generate with LLM
 ```
 
 ## Project Structure
@@ -274,6 +277,7 @@ nix-shell nix/shell.nix
 - Rust toolchain (rustc, cargo, clippy, rustfmt)
 - Node.js 22 + pnpm
 - All Tauri system dependencies (webkitgtk, gtk3, etc.)
+- Tesseract OCR + English language data
 - Build tools (gcc, make, patchelf)
 
 ### Manual Setup (Without Nix)
@@ -311,6 +315,7 @@ npm install -g pnpm
 ### Phase 2: Document Processing
 - [x] File picker UI
 - [x] PDF text extraction
+- [x] OCR support (Tesseract for scanned/image PDFs)
 - [x] Chunking logic (fixed-size + overlap)
 - [x] Markdown/text support
 - [x] Document metadata

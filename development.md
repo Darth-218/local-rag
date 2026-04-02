@@ -1,6 +1,46 @@
 # Development Log
 
-## Current State: Phase 4 Enhanced - Chat-Scoped Documents & UI Improvements
+## Current State: Phase 5 - OCR Support for Scanned PDFs
+
+---
+
+## Phase 5: OCR Support ✅ (NEW)
+
+### New Dependencies
+
+**Nix shell.nix:**
+```nix
+pkgs.tesseract          # OCR engine
+pkgs.poppler-utils      # For pdftoppm (PDF to image conversion)
+```
+
+**Cargo.toml:**
+```toml
+lopdf = "0.34"
+```
+
+### OCR Implementation
+
+**document.rs changes:**
+- Added `extract_pdf_with_ocr()` function using `pdftoppm` + Tesseract
+- Added `run_tesseract()` helper using Tesseract CLI
+- Automatic fallback: if PDF text extraction returns empty, OCR is attempted
+- PDF pages are rendered to PNG images at 300 DPI, then processed with Tesseract
+
+**How it works:**
+```
+PDF → Try text extraction (lopdf)
+       ↓ (if empty)
+       Render pages to images (pdftoppm)
+       ↓
+       Run Tesseract OCR on each image
+       ↓
+       Combine extracted text
+```
+
+### Supported Languages
+- English (default, included with tesseract)
+- Additional languages: install additional tesseract language packs
 
 ---
 
@@ -237,6 +277,11 @@ curl -fsSL https://ollama.com/install.sh | sh
 # Pull models
 ollama pull phi3.5-mini    # For chat
 ollama pull nomic-embed-text  # For embeddings
+
+# Note: Tesseract OCR is included in the Nix development environment
+# For system installation (without Nix):
+#   - macOS: brew install tesseract
+#   - Ubuntu/Debian: apt install tesseract-ocr
 ```
 
 ## Environment Info

@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use log::info;
+use log::{info, warn};
 use lopdf::Document;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -96,6 +97,71 @@ impl DocumentProcessor {
         Ok(result)
     }
 
+    pub fn extract_pdf_with_ocr(path: &Path) -> Result<String> {
+        info!("Converting PDF to images for OCR: {:?}", path);
+        
+        let temp_dir = std::env::temp_dir().join(format!("ocr_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir)?;
+
+        let output = Command::new("pdftoppm")
+            .arg("-png")
+            .arg("-r")
+            .arg("300")  // 300 DPI for good OCR quality
+            .arg(path)
+            .arg(temp_dir.join("page").to_str().unwrap())
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("pdftoppm failed: {}", stderr);
+            return Err(anyhow::anyhow!("pdftoppm failed: {}", stderr));
+        }
+
+        let mut all_text = Vec::new();
+        
+        let entries = fs::read_dir(&temp_dir)?;
+        let mut image_files: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "png"))
+            .collect();
+        
+        image_files.sort_by_key(|e| e.file_name());
+
+        for image_file in image_files {
+            let img_path = image_file.path();
+            if let Ok(text) = Self::run_tesseract(&img_path) {
+                if !text.trim().is_empty() {
+                    all_text.push(text);
+                }
+            }
+        }
+
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        let result = all_text.join("\n\n");
+        info!("OCR extracted {} characters from PDF", result.len());
+        Ok(result)
+    }
+
+    fn run_tesseract(image_path: &Path) -> Result<String> {
+        let output = Command::new("tesseract")
+            .arg(image_path)
+            .arg("stdout")
+            .arg("--psm")
+            .arg("1")  // Automatic page segmentation with OSD
+            .arg("-l")
+            .arg("eng")
+            .output()?;
+
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout).to_string();
+            Ok(text)
+        } else {
+            let error = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(anyhow::anyhow!("Tesseract failed: {}", error))
+        }
+    }
+
     pub fn extract_text_file(path: &Path) -> Result<String> {
         info!("Reading text file: {:?}", path);
         let content = fs::read_to_string(path)?;
@@ -105,7 +171,15 @@ impl DocumentProcessor {
 
     pub fn extract_text(path: &Path) -> Result<String> {
         match Self::get_file_type(path) {
-            Some(ext) if ext == "pdf" => Self::extract_pdf_text(path),
+            Some(ext) if ext == "pdf" => {
+                let text = Self::extract_pdf_text(path)?;
+                if text.trim().is_empty() {
+                    warn!("PDF text extraction returned empty, attempting OCR...");
+                    Self::extract_pdf_with_ocr(path)
+                } else {
+                    Ok(text)
+                }
+            }
             Some(_) => Self::extract_text_file(path),
             None => Err(DocumentError::UnsupportedType(
                 "No file extension found".to_string(),
