@@ -19,9 +19,9 @@
 | Component | Technology |
 |-----------|------------|
 | UI | React + Tauri |
-| LLM | Ollama (Phi-3.5-mini / Llama 3.2 1B) |
-| Embeddings | all-MiniLM-L6-v2 |
-| Vector DB | ChromaDB |
+| LLM | Ollama (phi3.5-mini) |
+| Embeddings | Ollama (nomic-embed-text) |
+| Vector Store | JSON files |
 
 ## Requirements
 
@@ -38,13 +38,21 @@
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-### 2. Pull a Model
+### 2. Pull Required Models
 
+**Chat/LLM** (for generating answers):
 ```bash
 ollama pull phi3.5-mini   # Recommended (2.2GB)
 # or
-ollama pull llama3.2:1b   # Lighter option (1.3GB)
+ollama pull llama3.2:1b    # Lighter option (1.3GB)
 ```
+
+**Embeddings** (for document/query vectorization):
+```bash
+ollama pull nomic-embed-text  # Required for embeddings (~275MB)
+```
+
+> **Note**: Both models are required for full functionality.
 
 ### 3. Install local-rag
 
@@ -76,14 +84,14 @@ cargo tauri build && ./src-tauri/target/release/local-rag  # Production
 │           Tauri Desktop App             │
 │                                         │
 │  ┌─────────┐  ┌──────────┐  ┌────────┐  │
-│  │  React  │  │  Ollama  │  │ Chroma │  │
-│  │   UI    │──│  (LLM)   │──│  (DB)  │  │
+│  │  React  │  │  Ollama  │  │  JSON  │  │
+│  │   UI    │──│  (LLM)   │──│ Files  │  │
 │  └─────────┘  └──────────┘  └────────┘  │
 │                                         │
-│  Data Directory: ~/.local-rag/          │
+│  Data Directory: ~/.local/share/com.localrag.app/
 │  ├── documents/      # Original files   │
-│  ├── chroma/         # Vector store     │
-│  └── config.json     # User settings    │
+│  ├── chroma/         # Vector index     │
+│  └── chats/         # Chat history      │
 └─────────────────────────────────────────┘
 ```
 
